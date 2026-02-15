@@ -1,1 +1,190 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ligue 1 Marble Race</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <style>
+        :root { --gold: #f1c40f; --bg: #050505; }
+        body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Arial', sans-serif; overflow: hidden; color: white; }
+        
+        #app-container { position: relative; width: 380px; height: 675px; background: var(--bg); border-radius: 40px; border: 4px solid #333; overflow: hidden; box-shadow: 0 0 30px rgba(0,0,0,0.5); }
+        
+        #ui { position: absolute; top: 20px; width: 100%; z-index: 10; display: flex; flex-direction: column; align-items: center; gap: 15px; }
+        
+        .selection-container { display: flex; justify-content: space-around; width: 100%; padding: 0 10px; box-sizing: border-box; }
+        
+        .club-selector { display: flex; flex-direction: column; align-items: center; width: 45%; gap: 5px; }
+        
+        select { width: 100%; padding: 8px; border-radius: 8px; background: #222; color: white; border: 1px solid #444; font-size: 0.8rem; cursor: pointer; }
+        
+        .preview-logo { width: 50px; height: 50px; object-fit: contain; background: rgba(255,255,255,0.05); padding: 5px; border-radius: 50%; border: 2px solid #333; }
 
+        button#launch-btn { width: 80%; padding: 15px; border: none; border-radius: 12px; font-size: 1.1rem; font-weight: bold; color: white; cursor: pointer; background: linear-gradient(to bottom, blue, red); box-shadow: 0 4px 0 purple; }
+        button#launch-btn:active { transform: translateY(2px); box-shadow: none; }
+
+        #pop { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0); background: rgba(0,0,0,0.95); padding: 30px; border-radius: 20px; text-align: center; z-index: 20; border: 3px solid var(--gold); transition: 0.4s; width: 70%; }
+    </style>
+</head>
+<body>
+
+<div id="app-container">
+    <div id="ui">
+        <div class="selection-container">
+            <div class="club-selector">
+                <img id="img1" class="preview-logo" src="" alt="logo">
+                <select id="select1" onchange="updateLogos()"></select>
+            </div>
+            <div class="club-selector">
+                <img id="img2" class="preview-logo" src="" alt="logo">
+                <select id="select2" onchange="updateLogos()"></select>
+            </div>
+        </div>
+        <button id="launch-btn" onclick="launch()">LANCER LA COURSE</button>
+    </div>
+
+    <div id="pop">
+        <p style="color: var(--gold); margin: 0; letter-spacing: 2px;">VAINQUEUR</p>
+        <div id="win-name" style="font-size: 2.2rem; font-weight: bold; margin: 15px 0;"></div>
+        <button onclick="closePop()" style="background: #444; border: none; color: white; padding: 10px 20px; border-radius: 8px; cursor: pointer;">REOUVRIR</button>
+    </div>
+</div>
+<audio id="sound-start" src="bet-365-goal-sound.mp3"></audio>
+<audio id="sound-win" src="uefa-euro-2008-official-song-after-goal-httpbogdanstancu-mp3cut-mp3cut.mp3"></audio>
+<script>
+    // Base de données simplifiée des clubs Ligue 1
+    const clubs = [
+        { name: "Paris-SG", logo: "téléchargement.png" },
+        { name: "Lens", logo: "téléchargement (1).png" },
+        { name: "Lyon", logo: "téléchargement (2).png" },
+        { name: "Marseille", logo: "téléchargement (3).png" },
+        { name: "Rennes", logo: "téléchargement (4).png" },
+        { name: "Lille", logo: "téléchargement (5).png" },
+        { name: "Monaco", logo: "téléchargement (6).png" },
+        { name: "Strasbourg", logo: "téléchargement (7).png" },
+        { name: "Toulouse", logo: "téléchargement (8).png" },
+        { name: "Angers", logo: "téléchargement (9).png" },
+        { name: "Lorient", logo: "téléchargement (10).png" },
+        { name: "Brest", logo: "téléchargement (11).png" },
+        { name: "Le Havre", logo: "téléchargement (12).png" },
+        { name: "Nice", logo: "téléchargement (13).png" },
+        { name: "Paris FC", logo: "téléchargement (14).png" },
+        { name: "Auxerre", logo: "téléchargement (15).png" },
+        { name: "Nantes", logo: "téléchargement (16).png" },
+        { name: "Metz", logo: "téléchargement (17).png" }
+        
+    ];
+
+    // Initialisation des menus déroulants
+    const s1 = document.getElementById('select1');
+    const s2 = document.getElementById('select2');
+
+    clubs.forEach((club, index) => {
+        let opt1 = new Option(club.name, index);
+        let opt2 = new Option(club.name, index);
+        s1.add(opt1);
+        s2.add(opt2);
+    });
+
+    s2.selectedIndex = 1; // Par défaut OM vs PSG
+
+    function updateLogos() {
+        document.getElementById('img1').src = clubs[s1.selectedIndex].logo;
+        document.getElementById('img2').src = clubs[s2.selectedIndex].logo;
+    }
+    updateLogos();
+
+    // --- MOTEUR PHYSIQUE ---
+    const { Engine, Render, Runner, Bodies, Composite, Events, Body } = Matter;
+    const engine = Engine.create();
+    const width = 380, height = 675;
+
+    const render = Render.create({
+        element: document.getElementById('app-container'),
+        engine: engine,
+        options: { width, height, wireframes: false, background: 'transparent' }
+    });
+
+    const ground = Bodies.rectangle(width/2, height - 10, width, 20, { isStatic: true, label: 'finish', render: { visible: false } });
+    const wallL = Bodies.rectangle(-10, height/2, 25, height, { isStatic: true });
+    const wallR = Bodies.rectangle(width + 10, height/2, 25, height, { isStatic: true });
+    
+    // Obstacles espacés pour éviter tout blocage
+    for (let r = 0; r < 9; r++) {
+        for (let c = 0; c < 6; c++) {
+            let x = c * 65 + (r % 2 === 0 ? 35 : 15);
+            let y = 250 + r * 45;
+            if (x > 20 && x < width - 20) {
+                Composite.add(engine.world, Bodies.circle(x, y, 4, { isStatic: true, render: { fillStyle: '#333' } }));
+            }
+        }
+    }
+    Composite.add(engine.world, [ground, wallL, wallR]);
+    Render.run(render);
+    Runner.run(Runner.create(), engine);
+
+    let b1, b2, finished = false;
+
+    function launch() {
+        const startAudio = document.getElementById('sound-start');
+    startAudio.currentTime = 0; // Remet au début si on relance vite
+    startAudio.play();
+
+        if (b1) Composite.remove(engine.world, [b1, b2]);
+        closePop();
+        finished = false;
+        engine.timing.timeScale = 1;
+
+        const club1 = clubs[s1.selectedIndex];
+        const club2 = clubs[s2.selectedIndex];
+
+        b1 = Bodies.circle(width/2 - 30, 160, 22, {
+            restitution: 0.5, label: club1.name,
+            render: { sprite: { texture: club1.logo, xScale: 1, yScale: 1 } }
+        });
+
+        b2 = Bodies.circle(width/2 + 30, 160, 22, {
+            restitution: 0.5, label: club2.name,
+            render: { sprite: { texture: club2.logo, xScale: 1, yScale: 1 } }
+        });
+
+        Composite.add(engine.world, [b1, b2]);
+    }
+
+    function closePop() { document.getElementById('pop').style.transform = 'translate(-50%, -50%) scale(0)'; }
+
+    Events.on(engine, 'afterUpdate', () => {
+        [b1, b2].forEach(b => {
+            if (!b) return;
+            // Anti-blocage
+            if (Math.abs(b.velocity.x) < 0.1 && b.position.y < height - 60) {
+                Body.applyForce(b, b.position, { x: (Math.random() - 0.5) * 0.005, y: 0 });
+            }
+            // Ralenti suspense
+            if (b.position.y > 610 && engine.timing.timeScale > 0.4 && !finished) {
+                engine.timing.timeScale -= 0.03;
+            }
+        });
+    });
+
+    Events.on(engine, 'collisionStart', (event) => {
+        event.pairs.forEach((pair) => {
+            if ((pair.bodyA.label === 'finish' || pair.bodyB.label === 'finish') && !finished) {
+                const winner = pair.bodyA.label === 'finish' ? pair.bodyB : pair.bodyA;
+                if(winner.label && winner.label !== 'Circle Body') {
+                    finished = true;
+                    const winAudio = document.getElementById('sound-win');
+                winAudio.currentTime = 0;
+                winAudio.play();
+                    document.getElementById('win-name').innerText = winner.label;
+                    document.getElementById('pop').style.transform = 'translate(-50%, -50%) scale(1)';
+                    confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+                }
+            }
+        });
+    });
+</script>
+</body>
+</html>
